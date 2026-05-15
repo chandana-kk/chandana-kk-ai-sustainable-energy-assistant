@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Segoe UI", system-ui, sans-serif;
+  --color-brand-400: #38bdf8;
+  --color-brand-500: #0ea5e9;
+  --color-brand-600: #0284c7;
+  --color-surface-dark: #0f172a;
+  --color-surface-card: rgba(30, 41, 59, 0.65);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply min-h-screen antialiased transition-colors duration-300;
+}
+
+body.dark {
+  @apply bg-slate-950 text-slate-100;
+}
+
+body.light {
+  @apply bg-slate-100 text-slate-900;
+}
+
+.glass {
+  @apply backdrop-blur-xl border border-white/10 shadow-xl;
+}
+
+body.light .glass {
+  @apply bg-white/70 border-slate-200/80;
+}
+
+body.dark .glass {
+  @apply bg-slate-800/50;
+}
+
+.gradient-bg {
+  background: radial-gradient(ellipse at top, rgba(14, 165, 233, 0.15), transparent 50%),
+    radial-gradient(ellipse at bottom right, rgba(99, 102, 241, 0.1), transparent 40%);
+}
