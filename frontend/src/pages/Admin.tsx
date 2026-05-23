@@ -1,46 +1,44 @@
-import { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
-import { useTranslation } from 'react-i18next';
-import { Users, Activity, Zap, Server } from 'lucide-react';
-import { Navbar } from '../components/Navbar';
-import { StatCard } from '../components/StatCard';
-import { adminApi } from '../services/api';
+import { useEffect, useState } from 'react'
+import { motion } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
+import Navbar from '../components/Navbar'
+import { adminApi } from '../services/api'
 
-export function Admin() {
-  const { t } = useTranslation();
-  const [stats, setStats] = useState({
-    total_users: 0,
-    active_sessions: 0,
-    total_energy_kwh: 0,
-    avg_daily_kwh: 0,
-    system_status: 'unknown',
-  });
+export default function Admin() {
+  const { t } = useTranslation()
+  const [stats, setStats] = useState<Record<string, unknown> | null>(null)
+  const [users, setUsers] = useState<unknown[]>([])
 
   useEffect(() => {
-    adminApi.stats().then((r) => setStats(r.data)).catch(() => {});
-  }, []);
+    adminApi.stats().then(({ data }) => setStats(data)).catch(() => {})
+    adminApi.users().then(({ data }) => setUsers(data.users || [])).catch(() => {})
+  }, [])
 
   return (
-    <div className="min-h-screen gradient-bg">
+    <div className="min-h-screen bg-gradient-to-b from-slate-950 to-slate-900 text-white">
       <Navbar />
-      <main className="max-w-7xl mx-auto px-4 py-6">
-        <h1 className="text-2xl font-bold mb-6">{t('adminStats')}</h1>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard title="Total Users" value={stats.total_users} icon={Users} />
-          <StatCard title="Active Sessions" value={stats.active_sessions} icon={Activity} color="emerald" />
-          <StatCard title="Total Energy" value={stats.total_energy_kwh} unit="kWh" icon={Zap} color="amber" />
-          <StatCard title="System" value={stats.system_status} icon={Server} color="violet" />
+      <main className="max-w-7xl mx-auto px-4 pb-12">
+        <h1 className="text-2xl font-bold mb-6">{t('admin')} Panel</h1>
+        <div className="grid md:grid-cols-3 gap-4 mb-8">
+          {['users', 'energy_readings', 'alerts'].map((key) => (
+            <motion.div key={key} className="glass-card" whileHover={{ scale: 1.02 }}>
+              <p className="text-slate-400 text-sm capitalize">{key.replace('_', ' ')}</p>
+              <p className="text-3xl font-bold">{String(stats?.[key] ?? '—')}</p>
+            </motion.div>
+          ))}
         </div>
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="glass rounded-2xl p-6 mt-6"
-        >
-          <p className="opacity-70 text-sm">
-            Admin panel for user analytics and system monitoring. Seed admin via POST /api/v1/admin/seed-admin
-          </p>
-        </motion.div>
+        <div className="glass-card">
+          <h2 className="font-semibold mb-4">Users</h2>
+          <ul className="space-y-2 text-sm">
+            {(users as { email: string; full_name: string; role: string }[]).map((u) => (
+              <li key={u.email} className="flex justify-between border-b border-white/5 py-2">
+                <span>{u.full_name}</span>
+                <span className="text-slate-400">{u.email} · {u.role}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       </main>
     </div>
-  );
+  )
 }

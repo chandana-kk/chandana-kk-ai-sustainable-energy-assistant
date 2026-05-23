@@ -1,1 +1,1 @@
-"""Smart Energy AI - FastAPI Backend."""
+"""Smart Energy AI — FastAPI application package."""

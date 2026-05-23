@@ -1,75 +1,100 @@
-import { createContext, useContext, useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
-import { authApi } from '../services/api';
-import type { User } from '../services/api';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react'
+import { authApi } from '../services/api'
 
-interface AuthContextType {
-  user: User | null;
-  loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, fullName: string) => Promise<void>;
-  logout: () => void;
-  refreshUser: () => Promise<void>;
+export interface User {
+  id: string
+  email: string
+  full_name: string
+  role: string
+  preferred_language: string
+  theme: string
 }
 
-const AuthContext = createContext<AuthContextType | null>(null);
+interface AuthContextValue {
+  user: User | null
+  token: string | null
+  loading: boolean
+  login: (email: string, password: string) => Promise<void>
+  register: (data: {
+    email: string
+    password: string
+    full_name: string
+    preferred_language?: string
+  }) => Promise<void>
+  logout: () => void
+  setUser: (u: User | null) => void
+}
+
+const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(null)
+  const [token, setToken] = useState<string | null>(localStorage.getItem('token'))
+  const [loading, setLoading] = useState(true)
 
-  const refreshUser = async () => {
-    const token = localStorage.getItem('access_token');
-    if (!token) {
-      setUser(null);
-      setLoading(false);
-      return;
-    }
-    try {
-      const { data } = await authApi.me();
-      setUser(data);
-    } catch {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const persist = useCallback((accessToken: string, u: User) => {
+    localStorage.setItem('token', accessToken)
+    setToken(accessToken)
+    setUser(u)
+  }, [])
+
+  const logout = useCallback(() => {
+    localStorage.removeItem('token')
+    setToken(null)
+    setUser(null)
+  }, [])
+
+  const login = useCallback(
+    async (email: string, password: string) => {
+      const { data } = await authApi.login(email, password)
+      persist(data.access_token, data.user)
+    },
+    [persist],
+  )
+
+  const register = useCallback(
+    async (payload: {
+      email: string
+      password: string
+      full_name: string
+      preferred_language?: string
+    }) => {
+      const { data } = await authApi.register(payload)
+      persist(data.access_token, data.user)
+    },
+    [persist],
+  )
 
   useEffect(() => {
-    refreshUser();
-  }, []);
+    if (!token) {
+      setLoading(false)
+      return
+    }
+    authApi
+      .me()
+      .then(({ data }) => setUser(data))
+      .catch(() => logout())
+      .finally(() => setLoading(false))
+  }, [token, logout])
 
-  const login = async (email: string, password: string) => {
-    const { data } = await authApi.login({ email, password });
-    localStorage.setItem('access_token', data.access_token);
-    localStorage.setItem('refresh_token', data.refresh_token);
-    await refreshUser();
-  };
+  const value = useMemo(
+    () => ({ user, token, loading, login, register, logout, setUser }),
+    [user, token, loading, login, register, logout],
+  )
 
-  const register = async (email: string, password: string, fullName: string) => {
-    const { data } = await authApi.register({ email, password, full_name: fullName });
-    localStorage.setItem('access_token', data.access_token);
-    localStorage.setItem('refresh_token', data.refresh_token);
-    await refreshUser();
-  };
-
-  const logout = () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    setUser(null);
-  };
-
-  return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, refreshUser }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
-  return ctx;
+  const ctx = useContext(AuthContext)
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider')
+  return ctx
 }

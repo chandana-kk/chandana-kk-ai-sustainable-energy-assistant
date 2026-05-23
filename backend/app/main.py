@@ -1,3 +1,4 @@
+"""Smart Energy AI — FastAPI application entry."""
 import asyncio
 import json
 from contextlib import asynccontextmanager
@@ -7,20 +8,20 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
-from app.core.database import close_database, get_database
-from app.services.energy_simulator import simulator
+from app.core.database import close_db, connect_db, get_database
+from app.core.security import decode_access_token
+from app.services.energy_simulator import get_simulator
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    db = get_database()
-    await db.users.create_index("email", unique=True)
+    await connect_db()
     yield
-    await close_database()
+    await close_db()
 
 
 app = FastAPI(
-    title="Smart Energy AI API",
+    title=get_settings().app_name,
     description="AI-Based Home Electricity Usage Prediction and Optimization",
     version="1.0.0",
     lifespan=lifespan,
@@ -34,59 +35,71 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.include_router(api_router, prefix="/api/v1")
+
+app.include_router(api_router)
+
+
+@app.get("/")
+async def root():
+    return {
+        "app": settings.app_name,
+        "docs": "/docs",
+        "health": "ok",
+    }
+
+
+@app.get("/health")
+async def health():
+    try:
+        db = get_database()
+        await db.command("ping")
+        db_ok = True
+    except Exception:
+        db_ok = False
+    return {"status": "healthy" if db_ok else "degraded", "database": db_ok}
 
 
 class ConnectionManager:
     def __init__(self):
-        self.active: list[WebSocket] = []
+        self.active: dict[str, list[WebSocket]] = {}
 
-    async def connect(self, ws: WebSocket):
+    async def connect(self, ws: WebSocket, user_id: str):
         await ws.accept()
-        self.active.append(ws)
+        self.active.setdefault(user_id, []).append(ws)
 
-    def disconnect(self, ws: WebSocket):
-        if ws in self.active:
-            self.active.remove(ws)
+    def disconnect(self, ws: WebSocket, user_id: str):
+        if user_id in self.active:
+            self.active[user_id] = [c for c in self.active[user_id] if c != ws]
 
-    async def broadcast(self, data: dict):
-        dead = []
-        for ws in self.active:
+    async def broadcast_user(self, user_id: str, data: dict):
+        for ws in self.active.get(user_id, []):
             try:
                 await ws.send_json(data)
             except Exception:
-                dead.append(ws)
-        for ws in dead:
-            self.disconnect(ws)
+                pass
 
 
 manager = ConnectionManager()
 
 
-@app.get("/health")
-async def health():
-    return {"status": "ok", "service": settings.app_name}
-
-
 @app.websocket("/ws/energy")
-async def websocket_energy(websocket: WebSocket):
-    """Real-time simulated energy stream for dashboard."""
-    await manager.connect(websocket)
+async def websocket_energy(websocket: WebSocket, token: str = ""):
+    """Real-time energy stream; pass ?token=JWT"""
+    payload = decode_access_token(token) if token else None
+    if not payload or "sub" not in payload:
+        await websocket.close(code=4001)
+        return
+
+    user_id = payload["sub"]
+    await manager.connect(websocket, user_id)
+    sim = get_simulator(user_id)
+    interval = settings.energy_sim_interval_seconds
+
     try:
         while True:
-            live = simulator.generate_live_reading()
-            agg = simulator.aggregate_usage(live["power_kw"])
-            appliances = simulator.estimate_appliances(live["power_kw"])
-            payload = {"live": live, "appliances": appliances, **agg}
-            await websocket.send_json(payload)
-            await asyncio.sleep(settings.simulation_interval_seconds)
+            reading = sim.next_reading()
+            await websocket.send_json(reading)
+            await manager.broadcast_user(user_id, reading)
+            await asyncio.sleep(interval)
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
-
-
-# MQTT placeholder — enable when broker is available
-async def mqtt_listener_placeholder():
-    if not settings.mqtt_enabled:
-        return
-    # Future: aiomqtt subscribe to settings.mqtt_topic_energy
-    pass
+        manager.disconnect(websocket, user_id)

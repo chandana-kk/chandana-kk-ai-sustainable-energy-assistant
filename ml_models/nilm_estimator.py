@@ -1,35 +1,41 @@
-"""Dummy NILM (Non-Intrusive Load Monitoring) appliance disaggregation."""
-
-import numpy as np
-from typing import List, Dict
+"""NILM-style appliance disaggregation (heuristic demo)."""
+from typing import Dict, List
 
 
 APPLIANCE_SIGNATURES = {
-    "ac": {"freq_hz": 50, "power_range": (800, 2500), "duty_cycle": 0.7},
-    "fridge": {"freq_hz": 50, "power_range": (80, 200), "duty_cycle": 0.4},
-    "washing_machine": {"freq_hz": 50, "power_range": (200, 800), "duty_cycle": 0.2},
+    "ac": {"min_kw": 0.8, "max_kw": 2.5, "duty": 0.6},
+    "refrigerator": {"min_kw": 0.1, "max_kw": 0.3, "duty": 0.9},
+    "tv": {"min_kw": 0.05, "max_kw": 0.2, "duty": 0.5},
+    "washing_machine": {"min_kw": 0.0, "max_kw": 2.0, "duty": 0.15},
+    "lights": {"min_kw": 0.05, "max_kw": 0.4, "duty": 0.7},
+    "water_heater": {"min_kw": 0.0, "max_kw": 2.5, "duty": 0.2},
 }
 
 
-def disaggregate(total_power_w: float, duration_minutes: int = 60) -> List[Dict]:
+def disaggregate(total_kw: float, active_appliances: List[str] | None = None) -> Dict[str, float]:
     """
-    Estimate appliance contributions from aggregate power (demo logic).
-    Real NILM uses edge detection, harmonic analysis, and trained classifiers.
+    Dummy NILM: distribute total power across known appliance signatures.
+    Replace with CNN/Seq2Seq model when labeled data is available.
     """
-    profiles = [
-        ("Air Conditioner", 0.35),
-        ("Refrigerator", 0.12),
-        ("Washing Machine", 0.15),
-        ("TV & Entertainment", 0.10),
-        ("Lighting", 0.18),
-        ("Standby Loads", 0.10),
-    ]
-    results = []
-    for name, share in profiles:
-        power = total_power_w * share * np.random.uniform(0.9, 1.1)
-        results.append({
-            "name": name,
-            "power_w": round(power, 1),
-            "share_percent": round(share * 100, 1),
-        })
-    return sorted(results, key=lambda x: x["power_w"], reverse=True)
+    import random
+
+    apps = active_appliances or list(APPLIANCE_SIGNATURES.keys())
+    random.shuffle(apps)
+    result = {}
+    remaining = total_kw
+    for name in apps[:5]:
+        sig = APPLIANCE_SIGNATURES.get(name, {"min_kw": 0.05, "max_kw": 0.2})
+        if random.random() > sig.get("duty", 0.5):
+            continue
+        load = random.uniform(sig["min_kw"], min(sig["max_kw"], remaining))
+        result[name] = round(load, 3)
+        remaining -= load
+        if remaining <= 0.05:
+            break
+    if remaining > 0:
+        result["other"] = round(remaining, 3)
+    return result
+
+
+if __name__ == "__main__":
+    print(disaggregate(2.1))

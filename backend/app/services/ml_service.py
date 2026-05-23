@@ -1,184 +1,190 @@
-"""ML inference: LSTM predictions, optimization recommendations, NILM."""
-
-from datetime import datetime, timedelta
+"""ML inference: LSTM predictions, XGBoost recommendations, NILM estimates."""
+import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import random
+from typing import List
 
 import numpy as np
 
 from app.core.config import get_settings
-from app.services.energy_simulator import simulator
-
-_lstm_model = None
-_optimizer_model = None
+from app.services.energy_simulator import get_simulator
 
 
 def _models_dir() -> Path:
-    return Path(get_settings().ml_models_path)
+    settings = get_settings()
+    base = Path(__file__).resolve().parents[3] / "ml_models" / "saved_models"
+    if not base.exists():
+        alt = Path(settings.ml_models_path)
+        if alt.is_absolute():
+            return alt
+        return Path(__file__).resolve().parents[2] / alt
+    return base
 
 
-def _load_lstm():
-    global _lstm_model
-    if _lstm_model is not None:
-        return _lstm_model
-    path = _models_dir() / "lstm_energy.h5"
-    if path.exists():
-        try:
-            from tensorflow.keras.models import load_model
-            _lstm_model = load_model(path)
-        except Exception:
-            _lstm_model = False
-    else:
-        _lstm_model = False
-    return _lstm_model
+class MLService:
+    """Loads trained models when available; falls back to heuristic logic."""
 
+    def predict_usage(self, user_id: str, horizon: str = "24h") -> List[dict]:
+        hours = 24 if horizon == "24h" else (168 if horizon == "7d" else 24)
+        sim = get_simulator(user_id)
+        reading = sim.next_reading()
+        base = reading["power_kw"]
 
-def _load_optimizer():
-    global _optimizer_model
-    if _optimizer_model is not None:
-        return _optimizer_model
-    path = _models_dir() / "optimizer_xgb.pkl"
-    if path.exists():
-        try:
-            import joblib
-            _optimizer_model = joblib.load(path)
-        except Exception:
-            _optimizer_model = False
-    else:
-        _optimizer_model = False
-    return _optimizer_model
+        lstm_path = _models_dir() / "lstm_model.h5"
+        if lstm_path.exists():
+            try:
+                return self._lstm_predict(base, hours)
+            except Exception:
+                pass
 
+        return self._heuristic_predict(base, hours)
 
-def predict_energy(horizon: str = "daily") -> dict:
-    """LSTM or statistical fallback for future usage."""
-    live = simulator.generate_live_reading()
-    base = live["power_kw"] * 24
-    points = []
-    labels_map = {
-        "daily": ([f"{h:02d}:00" for h in range(24)], 24, 1),
-        "weekly": (["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], 7, 24),
-        "monthly": ([f"W{i+1}" for i in range(4)], 4, 24 * 7),
-    }
-    labels, count, mult = labels_map.get(horizon, labels_map["daily"])
-    model = _load_lstm()
-    for i, label in enumerate(labels[:count]):
-        trend = 1 + 0.05 * np.sin(i / 3)
-        predicted = round(base * trend * random.uniform(0.85, 1.15) / mult, 2)
-        actual = round(predicted * random.uniform(0.92, 1.08), 2) if i < count - 3 else None
-        points.append({"label": label, "actual": actual, "predicted": predicted})
-    if model and model is not False:
-        confidence = 0.89
-    else:
-        confidence = 0.78
-    peak = round(max(p["predicted"] for p in points) * 1.2, 2)
-    return {
-        "horizon": horizon,
-        "unit": "kWh",
-        "points": points,
-        "peak_load_kw": peak,
-        "confidence": confidence,
-    }
+    def _heuristic_predict(self, base_kw: float, hours: int) -> List[dict]:
+        import math
+        import random
 
+        now = datetime.now(timezone.utc)
+        points = []
+        for i in range(min(hours, 48)):
+            t = now + timedelta(hours=i)
+            h = t.hour
+            factor = 0.5 + 0.5 * math.sin((h - 6) * math.pi / 12)
+            kwh = max(0.1, base_kw * factor * random.uniform(0.85, 1.15))
+            points.append({
+                "hour": t.strftime("%H:%M"),
+                "predicted_kwh": round(kwh, 3),
+                "confidence": round(random.uniform(0.78, 0.95), 2),
+            })
+        return points
 
-def generate_recommendations(user: dict) -> list[dict]:
-    """XGBoost-ranked or rule-based optimization tips."""
-    model = _load_optimizer()
-    hour = datetime.now().hour
-    candidates = [
-        {
-            "title": "Shift heavy loads to off-peak hours",
-            "description": "Run washing machine and dishwasher between 10 PM - 6 AM to save up to 25% on peak tariffs.",
-            "impact": "high",
-            "category": "scheduling",
-            "priority": 1,
-        },
-        {
-            "title": "Reduce AC setpoint by 2°C",
-            "description": "Each degree increase saves ~6% cooling energy. Try 26°C for optimal comfort vs cost.",
-            "impact": "high",
-            "category": "hvac",
-            "priority": 2,
-        },
-        {
-            "title": "Eliminate standby phantom loads",
-            "description": "Smart plugs on entertainment center could save ₹150-300/month.",
-            "impact": "medium",
-            "category": "standby",
-            "priority": 3,
-        },
-        {
-            "title": "Enable refrigerator coil maintenance",
-            "description": "Clean coils improve efficiency by 5-10% and reduce compressor runtime.",
-            "impact": "medium",
-            "category": "appliance",
-            "priority": 4,
-        },
-        {
-            "title": "Upgrade to LED lighting",
-            "description": "Replace remaining incandescent bulbs to cut lighting energy by 75%.",
-            "impact": "medium",
-            "category": "lighting",
-            "priority": 5,
-        },
-    ]
-    if 18 <= hour <= 22:
-        candidates.insert(0, {
-            "title": "Peak hour alert: defer non-essential loads",
-            "description": "Current grid peak period. Delay EV charging or water heater by 2 hours.",
-            "impact": "high",
-            "category": "peak",
-            "priority": 0,
-        })
-    if model and model is not False:
-        try:
-            features = np.array([[hour, user.get("monthly_kwh", 300), 1 if 18 <= hour <= 22 else 0]])
-            scores = model.predict(features) if hasattr(model, "predict") else None
-            if scores is not None:
-                pass  # Model can re-rank; keep rule order for demo
-        except Exception:
-            pass
-    recs = []
-    for i, c in enumerate(candidates[:6]):
+    def _lstm_predict(self, base_kw: float, hours: int) -> List[dict]:
+        from tensorflow import keras
+
+        model = keras.models.load_model(_models_dir() / "lstm_model.h5")
+        seq = np.array([[base_kw] * 24]).reshape(1, 24, 1)
+        preds = model.predict(seq, verbose=0)[0]
+        now = datetime.now(timezone.utc)
+        return [
+            {
+                "hour": (now + timedelta(hours=i)).strftime("%H:%M"),
+                "predicted_kwh": round(float(preds[i % len(preds)]), 3),
+                "confidence": 0.88,
+            }
+            for i in range(min(hours, len(preds)))
+        ]
+
+    def get_recommendations(self, user_id: str) -> List[dict]:
+        sim = get_simulator(user_id)
+        reading = sim.next_reading()
+        model_path = _models_dir() / "optimizer_model.joblib"
+
+        if model_path.exists():
+            try:
+                import joblib
+                clf = joblib.load(model_path)
+                features = np.array([[
+                    reading["power_kw"],
+                    reading["daily_kwh"],
+                    reading["monthly_kwh"],
+                    reading["estimated_bill"],
+                ]])
+                score = float(clf.predict(features)[0])
+            except Exception:
+                score = reading["power_kw"]
+        else:
+            score = reading["power_kw"]
+
+        recs = []
+        if reading["power_kw"] > 1.5:
+            recs.append({
+                "id": "r1",
+                "title": "Reduce AC load",
+                "description": "Set AC to 26°C instead of 22°C to save 15–20% cooling energy.",
+                "priority": "high",
+                "potential_savings_inr": 450,
+                "category": "hvac",
+            })
+        if reading["appliances"].get("standby", 0) > 0.05:
+            recs.append({
+                "id": "r2",
+                "title": "Eliminate standby power",
+                "description": "Unplug idle chargers and switch off TV/set-top box at night.",
+                "priority": "medium",
+                "potential_savings_inr": 120,
+                "category": "standby",
+            })
+        hour = datetime.now().hour
+        if 18 <= hour <= 22:
+            recs.append({
+                "id": "r3",
+                "title": "Shift to off-peak hours",
+                "description": "Run washing machine and water heater after 10 PM for lower tariffs.",
+                "priority": "medium",
+                "potential_savings_inr": 200,
+                "category": "scheduling",
+            })
         recs.append({
-            "id": f"rec_{i}",
-            **c,
+            "id": "r4",
+            "title": "LED lighting upgrade",
+            "description": "Replace incandescent bulbs with LED to cut lighting energy by up to 80%.",
+            "priority": "low",
+            "potential_savings_inr": 80,
+            "category": "lighting",
         })
-    return recs
+        if score > 2.0 or reading["estimated_bill"] > get_settings().bill_alert_threshold:
+            recs.insert(0, {
+                "id": "r0",
+                "title": "Peak load alert",
+                "description": "Current usage is in peak band. Defer heavy appliances for 2 hours.",
+                "priority": "high",
+                "potential_savings_inr": 350,
+                "category": "peak",
+            })
+        return recs[:6]
+
+    def nilm_breakdown(self, user_id: str) -> dict:
+        reading = get_simulator(user_id).next_reading()
+        total = reading["power_kw"]
+        apps = reading["appliances"]
+        return {
+            "total_kw": total,
+            "appliances": [
+                {"name": k, "power_kw": v, "percentage": round(100 * v / total, 1) if total else 0}
+                for k, v in sorted(apps.items(), key=lambda x: -x[1])
+            ],
+            "method": "NILM-heuristic",
+        }
+
+    def chatbot_reply(self, message: str, user_id: str) -> dict:
+        msg = message.lower()
+        reading = get_simulator(user_id).next_reading()
+        if "bill" in msg or "cost" in msg:
+            reply = (
+                f"Your estimated monthly bill is ₹{reading['estimated_bill']:.0f} "
+                f"based on {reading['monthly_kwh']:.1f} kWh at ₹{get_settings().tariff_per_kwh}/kWh."
+            )
+        elif "save" in msg or "tip" in msg:
+            reply = "Try running heavy appliances after 10 PM, set AC to 26°C, and unplug standby devices."
+        elif "predict" in msg or "future" in msg:
+            preds = self.predict_usage(user_id, "24h")[:3]
+            reply = "Next hours forecast: " + ", ".join(
+                f"{p['hour']} → {p['predicted_kwh']} kWh" for p in preds
+            )
+        elif "carbon" in msg:
+            reply = f"Your estimated carbon footprint this month is {reading['carbon_kg']:.1f} kg CO₂."
+        else:
+            reply = (
+                "I'm your Smart Energy assistant. Ask about bills, savings tips, "
+                "predictions, or carbon footprint."
+            )
+        return {
+            "reply": reply,
+            "suggestions": [
+                "What is my estimated bill?",
+                "How can I save energy?",
+                "Show carbon footprint",
+            ],
+        }
 
 
-def chatbot_reply(message: str) -> dict:
-    """Simple rule-based energy assistant (placeholder for LLM integration)."""
-    msg = message.lower()
-    if "bill" in msg or "cost" in msg:
-        reply = "Based on your current usage pattern, estimated monthly bill is trending 12% above last month. I recommend shifting 2 appliances to off-peak hours."
-        suggestions = ["Show bill breakdown", "Peak hour schedule", "Savings tips"]
-    elif "solar" in msg or "renewable" in msg:
-        reply = "A 3kW rooftop solar system could offset ~45% of your daytime consumption. Would you like a savings projection?"
-        suggestions = ["Solar ROI estimate", "Net metering info"]
-    elif "predict" in msg or "forecast" in msg:
-        reply = "LSTM model forecasts 18.4 kWh for tomorrow with peak load at 7:30 PM. Consider pre-cooling before peak tariff window."
-        suggestions = ["View 7-day forecast", "Appliance breakdown"]
-    else:
-        reply = "I'm your Smart Energy assistant. Ask about bills, predictions, appliances, carbon footprint, or optimization tips."
-        suggestions = ["Why is my bill high?", "Tomorrow's prediction", "Reduce AC usage"]
-    return {"reply": reply, "suggestions": suggestions}
-
-
-def generate_history() -> dict:
-    """Historical trends for charts."""
-    now = datetime.now()
-    daily = []
-    for h in range(24):
-        v = 0.4 + 0.3 * np.sin((h - 6) / 4) + random.uniform(0, 0.2)
-        if 18 <= h <= 22:
-            v *= 1.4
-        daily.append({"label": f"{h:02d}:00", "value": round(max(0.1, v), 2)})
-    weekly = []
-    days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-    for d in days:
-        weekly.append({"label": d, "value": round(10 + random.uniform(2, 8), 2)})
-    monthly = []
-    for i in range(30):
-        day = (now - timedelta(days=29 - i)).strftime("%d %b")
-        monthly.append({"label": day, "value": round(8 + random.uniform(1, 6), 2)})
-    return {"daily": daily, "weekly": weekly, "monthly": monthly}
+ml_service = MLService()

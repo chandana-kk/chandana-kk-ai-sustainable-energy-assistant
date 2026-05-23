@@ -1,41 +1,46 @@
-"""
-Train XGBoost model for recommendation prioritization.
-Run: python train_optimizer.py
-"""
-
-import numpy as np
+"""Train XGBoost model for optimization priority scoring."""
 from pathlib import Path
+
 import joblib
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from xgboost import XGBRegressor
 
-MODEL_DIR = Path(__file__).parent / "saved_models"
-MODEL_DIR.mkdir(parents=True, exist_ok=True)
+SAVED_DIR = Path(__file__).parent / "saved_models"
+SAVED_DIR.mkdir(exist_ok=True)
 
 
-def train():
-    try:
-        import xgboost as xgb
-    except ImportError:
-        print("XGBoost not installed. pip install xgboost")
-        return
-
-    # Features: hour, monthly_kwh, is_peak
+def main():
     np.random.seed(42)
-    n = 1000
-    X = np.column_stack([
-        np.random.randint(0, 24, n),
-        np.random.uniform(100, 600, n),
-        np.random.randint(0, 2, n),
-    ])
-    # Target: optimization score (higher = more savings potential)
-    y = X[:, 1] * 0.01 + X[:, 2] * 2 + (18 <= X[:, 0]) & (X[:, 0] <= 22) * 1.5
-    y += np.random.normal(0, 0.3, n)
+    n = 2000
+    df = pd.DataFrame({
+        "power_kw": np.random.uniform(0.2, 3.5, n),
+        "daily_kwh": np.random.uniform(5, 25, n),
+        "monthly_kwh": np.random.uniform(150, 500, n),
+        "estimated_bill": np.random.uniform(1200, 4500, n),
+    })
+    df["priority_score"] = (
+        0.4 * df["power_kw"]
+        + 0.003 * df["daily_kwh"]
+        + 0.002 * df["monthly_kwh"]
+        + 0.0003 * df["estimated_bill"]
+        + np.random.normal(0, 0.1, n)
+    )
 
-    model = xgb.XGBRegressor(n_estimators=50, max_depth=4, learning_rate=0.1)
-    model.fit(X, y)
-    path = MODEL_DIR / "optimizer_xgb.pkl"
+    X = df[["power_kw", "daily_kwh", "monthly_kwh", "estimated_bill"]]
+    y = df["priority_score"]
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+
+    model = XGBRegressor(n_estimators=100, max_depth=5, learning_rate=0.1)
+    model.fit(X_train, y_train)
+    score = model.score(X_test, y_test)
+    print(f"XGBoost R² on test: {score:.3f}")
+
+    path = SAVED_DIR / "optimizer_model.joblib"
     joblib.dump(model, path)
-    print(f"Saved optimizer model to {path}")
+    print(f"Optimizer model saved to {path}")
 
 
 if __name__ == "__main__":
-    train()
+    main()

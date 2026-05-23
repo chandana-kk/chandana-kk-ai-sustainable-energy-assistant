@@ -1,36 +1,44 @@
-"""Seed admin user and sample data. Run from project root with MongoDB running."""
-
+"""Seed demo user and sample data."""
 import asyncio
-from datetime import datetime, timezone
+import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
+# Allow imports from backend
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from motor.motor_asyncio import AsyncIOMotorClient
-from app.core.config import get_settings
-from app.core.security import hash_password
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parents[1] / "backend" / ".env")
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+
+from app.core.security import hash_password  # noqa: E402
 
 
 async def seed():
-    settings = get_settings()
-    client = AsyncIOMotorClient(settings.mongodb_url)
-    db = client[settings.mongodb_db_name]
+    url = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
+    db_name = os.getenv("MONGODB_DB_NAME", "smart_energy_ai")
+    client = AsyncIOMotorClient(url)
+    db = client[db_name]
+
     email = "demo@smartenergy.ai"
-    if not await db.users.find_one({"email": email}):
+    existing = await db.users.find_one({"email": email})
+    if not existing:
         await db.users.insert_one({
             "email": email,
-            "full_name": "Demo User",
             "password_hash": hash_password("demo123"),
+            "full_name": "Demo User",
             "role": "user",
-            "language": "en",
+            "preferred_language": "en",
             "theme": "dark",
-            "bill_threshold": 5000.0,
             "created_at": datetime.now(timezone.utc),
         })
         print(f"Created demo user: {email} / demo123")
     else:
-        print("Demo user already exists")
+        print(f"Demo user already exists: {email}")
+
     client.close()
 
 

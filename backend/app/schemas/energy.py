@@ -1,74 +1,53 @@
+"""Energy and analytics schemas."""
 from datetime import datetime
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
 
-class LiveReading(BaseModel):
+class LiveEnergyReading(BaseModel):
+    timestamp: datetime
     voltage: float
     current: float
     power_kw: float
-    power_factor: float
-    frequency: float
-    timestamp: datetime
-
-
-class ApplianceEstimate(BaseModel):
-    name: str
     power_w: float
-    share_percent: float
-    category: str
-
-
-class EnergySnapshot(BaseModel):
-    live: LiveReading
+    frequency: float = 50.0
+    power_factor: float = 0.92
     daily_kwh: float
-    weekly_kwh: float
     monthly_kwh: float
     estimated_bill: float
     carbon_kg: float
-    appliances: list[ApplianceEstimate]
-    peak_hour: str
-    savings_potential: float
+    appliances: Dict[str, float] = Field(default_factory=dict)
+
+
+class EnergyHistoryPoint(BaseModel):
+    label: str
+    kwh: float
+    cost: float
 
 
 class PredictionPoint(BaseModel):
-    label: str
-    actual: float | None = None
-    predicted: float
+    hour: str
+    predicted_kwh: float
+    confidence: float = 0.85
 
 
-class PredictionResponse(BaseModel):
-    horizon: str
-    unit: str = "kWh"
-    points: list[PredictionPoint]
-    peak_load_kw: float
-    confidence: float
-
-
-class Recommendation(BaseModel):
+class RecommendationItem(BaseModel):
     id: str
     title: str
     description: str
-    impact: str
+    priority: str
+    potential_savings_inr: float
     category: str
-    priority: int
 
 
 class AlertItem(BaseModel):
     id: str
     type: str
-    message: str
     severity: str
+    message: str
     created_at: datetime
     read: bool = False
-
-
-class UserSettingsUpdate(BaseModel):
-    language: str | None = None
-    theme: str | None = None
-    bill_threshold: float | None = None
-    notifications_enabled: bool | None = None
 
 
 class ChatMessage(BaseModel):
@@ -77,23 +56,21 @@ class ChatMessage(BaseModel):
 
 class ChatResponse(BaseModel):
     reply: str
-    suggestions: list[str] = Field(default_factory=list)
+    suggestions: List[str] = Field(default_factory=list)
 
 
-class TimeSeriesPoint(BaseModel):
-    label: str
-    value: float
+class IoTReading(BaseModel):
+    """Placeholder for ESP32 + SCT-013 sensor payloads."""
+    device_id: str
+    voltage: float
+    current: float
+    power_w: float
+    timestamp: Optional[datetime] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
-class DashboardHistory(BaseModel):
-    daily: list[TimeSeriesPoint]
-    weekly: list[TimeSeriesPoint]
-    monthly: list[TimeSeriesPoint]
-
-
-class AdminStats(BaseModel):
-    total_users: int
-    active_sessions: int
-    total_energy_kwh: float
-    avg_daily_kwh: float
-    system_status: str
+class SettingsUpdate(BaseModel):
+    preferred_language: Optional[str] = None
+    theme: Optional[str] = None
+    bill_alert_threshold: Optional[float] = None
+    tariff_per_kwh: Optional[float] = None

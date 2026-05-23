@@ -1,72 +1,79 @@
-import { Link } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
-import { motion } from 'framer-motion';
-import { Zap, Sun, Moon, LogOut, Shield } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
-import { useTheme } from '../contexts/ThemeContext';
-import { languages } from '../i18n';
-import { settingsApi } from '../services/api';
+import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
+import { motion } from 'framer-motion'
+import { Moon, Sun, Zap, LogOut, LayoutDashboard, Shield } from 'lucide-react'
+import { useAuth } from '../contexts/AuthContext'
+import { useTheme } from '../contexts/ThemeContext'
 
-export function Navbar() {
-  const { t, i18n } = useTranslation();
-  const { user, logout } = useAuth();
-  const { theme, toggle } = useTheme();
+const LANGS = [
+  { code: 'en', label: 'EN' },
+  { code: 'kn', label: 'ಕನ್' },
+  { code: 'hi', label: 'हि' },
+  { code: 'ta', label: 'த' },
+  { code: 'te', label: 'తె' },
+]
 
-  const changeLanguage = async (code: string) => {
-    i18n.changeLanguage(code);
-    localStorage.setItem('language', code);
-    try {
-      await settingsApi.update({ language: code });
-    } catch {
-      /* offline ok */
-    }
-  };
+export default function Navbar() {
+  const { t, i18n } = useTranslation()
+  const { user, logout } = useAuth()
+  const { theme, toggle } = useTheme()
+
+  const changeLang = (code: string) => {
+    i18n.changeLanguage(code)
+    localStorage.setItem('language', code)
+  }
 
   return (
     <motion.nav
+      className="glass sticky top-0 z-50 px-4 py-3 mb-6"
       initial={{ y: -20, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
-      className="glass sticky top-0 z-50 px-4 py-3"
     >
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-        <Link to="/dashboard" className="flex items-center gap-2 text-sky-400 font-bold text-lg">
-          <Zap className="w-7 h-7" />
-          <span>{t('appName')}</span>
+      <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+        <Link to="/dashboard" className="flex items-center gap-2 font-bold text-lg">
+          <Zap className="w-7 h-7 text-brand-500" />
+          <span className="bg-gradient-to-r from-brand-500 to-cyan-400 bg-clip-text text-transparent">
+            {t('appName')}
+          </span>
         </Link>
-        <div className="flex items-center gap-2 flex-wrap justify-end">
-          <select
-            value={i18n.language}
-            onChange={(e) => changeLanguage(e.target.value)}
-            className="glass rounded-lg px-2 py-1.5 text-sm bg-transparent border border-white/10"
-            aria-label={t('language')}
-          >
-            {languages.map((l) => (
-              <option key={l.code} value={l.code} className="bg-slate-800">
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex rounded-lg overflow-hidden border border-slate-600/50">
+            {LANGS.map((l) => (
+              <button
+                key={l.code}
+                type="button"
+                onClick={() => changeLang(l.code)}
+                className={`px-2 py-1 text-xs font-medium ${
+                  i18n.language === l.code
+                    ? 'bg-brand-500 text-white'
+                    : 'bg-slate-800/50 text-slate-300 hover:bg-slate-700'
+                }`}
+              >
                 {l.label}
-              </option>
+              </button>
             ))}
-          </select>
-          <button
-            onClick={toggle}
-            className="p-2 rounded-lg glass hover:bg-white/5 transition"
-            aria-label={theme === 'dark' ? t('lightMode') : t('darkMode')}
-          >
+          </div>
+
+          <button type="button" onClick={toggle} className="p-2 rounded-lg glass" aria-label="Toggle theme">
             {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </button>
+
+          <Link to="/dashboard" className="p-2 rounded-lg glass hidden sm:block" title={t('dashboard')}>
+            <LayoutDashboard className="w-5 h-5" />
+          </Link>
+
           {user?.role === 'admin' && (
-            <Link to="/admin" className="p-2 rounded-lg glass hover:bg-white/5" title={t('admin')}>
+            <Link to="/admin" className="p-2 rounded-lg glass" title={t('admin')}>
               <Shield className="w-5 h-5" />
             </Link>
           )}
-          <button
-            onClick={logout}
-            className="flex items-center gap-1 px-3 py-2 rounded-lg bg-red-500/20 text-red-300 hover:bg-red-500/30 text-sm"
-          >
-            <LogOut className="w-4 h-4" />
-            {t('logout')}
+
+          <button type="button" onClick={logout} className="p-2 rounded-lg glass text-red-400" title={t('logout')}>
+            <LogOut className="w-5 h-5" />
           </button>
         </div>
       </div>
     </motion.nav>
-  );
+  )
 }

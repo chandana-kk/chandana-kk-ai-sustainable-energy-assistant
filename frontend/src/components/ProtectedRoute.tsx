@@ -1,15 +1,15 @@
-import { Navigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+import { Navigate } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
 
-export function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { token, loading } = useAuth()
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-12 h-12 border-4 border-sky-500 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-slate-950">
+        <div className="w-10 h-10 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
       </div>
-    );
+    )
   }
-  if (!user) return <Navigate to="/login" replace />;
-  return <>{children}</>;
+  if (!token) return <Navigate to="/login" replace />
+  return <>{children}</>
 }

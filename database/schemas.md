@@ -1,21 +1,27 @@
 # MongoDB Collections
 
 ## users
-- email (unique), full_name, password_hash, role, language, theme
-- bill_threshold, notifications_enabled, created_at
+| Field | Type | Description |
+|-------|------|-------------|
+| email | string | Unique login |
+| password_hash | string | bcrypt hash |
+| full_name | string | Display name |
+| role | string | `user` \| `admin` |
+| preferred_language | string | en, kn, hi, ta, te |
+| theme | string | dark \| light |
+| created_at | datetime | Registration time |
 
 ## energy_readings
-- user_id, live (voltage, current, power_kw), daily/weekly/monthly kWh
-- estimated_bill, carbon_kg, appliances[], recorded_at
+Stored snapshots from simulation or IoT.
 
 ## predictions
-- user_id, horizon, points[], peak_load_kw, confidence, created_at
-
-## recommendations
-- user_id, items[], created_at
+Optional cache for ML outputs.
 
 ## alerts
-- user_id, type, message, severity, read, created_at
+User alerts (high usage, bill threshold, spikes).
+
+## iot_readings
+ESP32 / SCT-013 payloads when hardware is connected.
 
 ## password_resets
-- user_id, email, status, created_at
+Forgot-password audit trail (demo).

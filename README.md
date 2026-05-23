@@ -4,10 +4,10 @@
 
 A production-ready full-stack smart energy management platform built for final-year AIML engineering projects, portfolio showcases, and research demonstrations.
 
-![Stack](https://img.shields.io/badge/React-19-61DAFB)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688)
-![MongoDB](https://img.shields.io/badge/MongoDB-7-47A248)
-![TensorFlow](https://img.shields.io/badge/TensorFlow-2.18-FF6F00)
+![Stack](https://img.shields.io/badge/FastAPI-009688?style=flat&logo=fastapi&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB-47A248?style=flat&logo=mongodb&logoColor=white)
+![React](https://img.shields.io/badge/React-61DAFB?style=flat&logo=react&logoColor=black)
+![TensorFlow](https://img.shields.io/badge/TensorFlow-FF6F00?style=flat&logo=tensorflow&logoColor=white)
 
 ## Features
 
@@ -47,6 +47,8 @@ cp .env.example .env
 # Edit MongoDB URL and JWT secret
 ```
 
+Copy `.env.example` to `backend/.env` and set `MONGODB_URL` / `JWT_SECRET_KEY`.
+
 ### 2. Backend
 
 ```bash
@@ -60,10 +62,11 @@ python run.py
 
 API docs: http://localhost:8000/docs
 
-### 3. Train ML models (optional, fallback logic works without)
+### 3. Train ML models (optional — fallback logic works without)
 
 ```bash
 cd ml_models
+pip install -r requirements.txt
 python train_lstm.py
 python train_optimizer.py
 ```
@@ -84,6 +87,7 @@ Create admin: `POST http://localhost:8000/api/v1/admin/seed-admin`
 ```bash
 cd frontend
 npm install
+# Create frontend/.env with VITE_API_BASE_URL=http://localhost:8000
 npm run dev
 ```
 

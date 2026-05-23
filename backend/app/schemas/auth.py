@@ -1,10 +1,14 @@
+"""Authentication request/response schemas."""
+from typing import Literal, Optional
+
 from pydantic import BaseModel, EmailStr, Field
 
 
 class UserRegister(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=6, max_length=128)
-    full_name: str = Field(min_length=2, max_length=120)
+    password: str = Field(min_length=6)
+    full_name: str = Field(min_length=2, max_length=100)
+    preferred_language: Literal["en", "kn", "hi", "ta", "te"] = "en"
 
 
 class UserLogin(BaseModel):
@@ -18,14 +22,14 @@ class ForgotPassword(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
+    user: dict
 
 
-class UserResponse(BaseModel):
+class UserProfile(BaseModel):
     id: str
     email: str
     full_name: str
     role: str = "user"
-    language: str = "en"
+    preferred_language: str = "en"
     theme: str = "dark"

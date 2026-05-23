@@ -1,39 +1,43 @@
-import { motion } from 'framer-motion';
-import type { LucideIcon } from 'lucide-react';
+import { motion } from 'framer-motion'
+import type { LucideIcon } from 'lucide-react'
 
 interface StatCardProps {
-  title: string;
-  value: string | number;
-  unit?: string;
-  icon: LucideIcon;
-  color?: string;
-  delay?: number;
+  title: string
+  value: string
+  unit?: string
+  icon: LucideIcon
+  trend?: string
+  color?: string
 }
 
-export function StatCard({ title, value, unit, icon: Icon, color = 'sky', delay = 0 }: StatCardProps) {
-  const colors: Record<string, string> = {
-    sky: 'from-sky-500/20 to-sky-600/5 text-sky-400',
-    emerald: 'from-emerald-500/20 to-emerald-600/5 text-emerald-400',
-    amber: 'from-amber-500/20 to-amber-600/5 text-amber-400',
-    violet: 'from-violet-500/20 to-violet-600/5 text-violet-400',
-  };
+export default function StatCard({
+  title,
+  value,
+  unit,
+  icon: Icon,
+  trend,
+  color = 'from-brand-500 to-cyan-500',
+}: StatCardProps) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      className="glass-card"
+      initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay }}
-      className={`glass rounded-2xl p-5 bg-gradient-to-br ${colors[color] || colors.sky}`}
+      whileHover={{ scale: 1.02 }}
     >
-      <div className="flex justify-between items-start">
+      <div className="flex items-start justify-between">
         <div>
-          <p className="text-sm opacity-70 mb-1">{title}</p>
-          <p className="text-2xl font-bold">
+          <p className="text-sm text-slate-500 dark:text-slate-400">{title}</p>
+          <p className="text-2xl font-bold mt-1 text-slate-900 dark:text-white">
             {value}
-            {unit && <span className="text-sm font-normal ml-1 opacity-70">{unit}</span>}
+            {unit && <span className="text-base font-normal text-slate-500 ml-1">{unit}</span>}
           </p>
+          {trend && <p className="text-xs text-emerald-500 mt-1">{trend}</p>}
         </div>
-        <Icon className="w-8 h-8 opacity-80" />
+        <div className={`p-3 rounded-xl bg-gradient-to-br ${color} shadow-lg`}>
+          <Icon className="w-6 h-6 text-white" />
+        </div>
       </div>
     </motion.div>
-  );
+  )
 }

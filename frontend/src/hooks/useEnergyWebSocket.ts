@@ -1,53 +1,43 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { getWsUrl } from '../services/api';
+import { useEffect, useState } from 'react'
+import { getWsUrl } from '../services/api'
 
-export interface EnergyData {
-  live: {
-    voltage: number;
-    current: number;
-    power_kw: number;
-    power_factor: number;
-    frequency: number;
-    timestamp: string;
-  };
-  daily_kwh: number;
-  weekly_kwh: number;
-  monthly_kwh: number;
-  estimated_bill: number;
-  carbon_kg: number;
-  appliances: { name: string; power_w: number; share_percent: number; category: string }[];
-  peak_hour: string;
-  savings_potential: number;
+export interface LiveReading {
+  timestamp: string
+  voltage: number
+  current: number
+  power_kw: number
+  power_w: number
+  frequency: number
+  power_factor: number
+  daily_kwh: number
+  monthly_kwh: number
+  estimated_bill: number
+  carbon_kg: number
+  appliances: Record<string, number>
 }
 
-export function useEnergyWebSocket(enabled = true) {
-  const [data, setData] = useState<EnergyData | null>(null);
-  const [connected, setConnected] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
-
-  const connect = useCallback(() => {
-    if (!enabled) return;
-    const ws = new WebSocket(getWsUrl());
-    wsRef.current = ws;
-    ws.onopen = () => setConnected(true);
-    ws.onmessage = (e) => {
-      try {
-        setData(JSON.parse(e.data));
-      } catch {
-        /* ignore parse errors */
-      }
-    };
-    ws.onclose = () => {
-      setConnected(false);
-      setTimeout(connect, 3000);
-    };
-    ws.onerror = () => ws.close();
-  }, [enabled]);
+export function useEnergyWebSocket(token: string | null) {
+  const [reading, setReading] = useState<LiveReading | null>(null)
+  const [connected, setConnected] = useState(false)
 
   useEffect(() => {
-    connect();
-    return () => wsRef.current?.close();
-  }, [connect]);
+    if (!token) return
 
-  return { data, connected };
+    const ws = new WebSocket(getWsUrl(token))
+
+    ws.onopen = () => setConnected(true)
+    ws.onclose = () => setConnected(false)
+    ws.onerror = () => setConnected(false)
+    ws.onmessage = (ev) => {
+      try {
+        setReading(JSON.parse(ev.data))
+      } catch {
+        /* ignore */
+      }
+    }
+
+    return () => ws.close()
+  }, [token])
+
+  return { reading, connected }
 }

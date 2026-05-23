@@ -1,84 +1,120 @@
-"""Simulated real-time electricity readings and appliance usage."""
-
+"""Simulated real-time electricity readings for demo without hardware."""
 import math
 import random
 from datetime import datetime, timezone
+from typing import Dict
 
 from app.core.config import get_settings
 
-APPLIANCE_PROFILES = [
-    {"name": "Air Conditioner", "category": "hvac", "base_w": 1800, "variance": 400},
-    {"name": "Refrigerator", "category": "kitchen", "base_w": 150, "variance": 30},
-    {"name": "Washing Machine", "category": "laundry", "base_w": 500, "variance": 200},
-    {"name": "TV & Entertainment", "category": "entertainment", "base_w": 120, "variance": 40},
-    {"name": "Lighting", "category": "lighting", "base_w": 200, "variance": 80},
-    {"name": "Standby Loads", "category": "standby", "base_w": 85, "variance": 25},
-]
-
 
 class EnergySimulator:
-    def __init__(self) -> None:
+    """Generates realistic fluctuating power readings and appliance breakdown."""
+
+    APPLIANCE_PROFILES = {
+        "ac": (0.8, 2.2),
+        "refrigerator": (0.15, 0.25),
+        "tv": (0.05, 0.15),
+        "washing_machine": (0.0, 1.8),
+        "lights": (0.08, 0.35),
+        "fan": (0.05, 0.12),
+        "microwave": (0.0, 1.2),
+        "computer": (0.1, 0.4),
+        "water_heater": (0.0, 2.5),
+        "standby": (0.02, 0.08),
+    }
+
+    def __init__(self, user_id: str):
+        self.user_id = user_id
         self._tick = 0
+        self._daily_kwh = random.uniform(8.0, 14.0)
+        self._monthly_kwh = random.uniform(220.0, 380.0)
 
-    def generate_live_reading(self) -> dict:
+    def next_reading(self) -> dict:
         self._tick += 1
-        hour = datetime.now().hour
-        # Peak hours 18-22
-        peak_factor = 1.35 if 18 <= hour <= 22 else (0.75 if 2 <= hour <= 6 else 1.0)
-        noise = math.sin(self._tick / 8) * 0.15 + random.uniform(-0.08, 0.08)
-        base_power = 2.2 * peak_factor * (1 + noise)
-        voltage = round(220 + random.uniform(-5, 5), 1)
-        power_w = max(200, base_power * 1000)
-        current = round(power_w / voltage, 2)
-        return {
-            "voltage": voltage,
-            "current": current,
-            "power_kw": round(power_w / 1000, 3),
-            "power_factor": round(random.uniform(0.88, 0.98), 2),
-            "frequency": round(49.8 + random.uniform(-0.2, 0.2), 1),
-            "timestamp": datetime.now(timezone.utc),
-        }
-
-    def estimate_appliances(self, total_power_w: float) -> list[dict]:
-        """NILM-style dummy disaggregation based on weighted profiles."""
-        weights = []
-        for profile in APPLIANCE_PROFILES:
-            w = profile["base_w"] + random.uniform(-profile["variance"], profile["variance"])
-            weights.append(max(10, w))
-        total_w = sum(weights)
-        scale = (total_power_w * 1000) / total_w if total_w else 1
-        appliances = []
-        for profile, w in zip(APPLIANCE_PROFILES, weights):
-            power = w * scale
-            share = (power / (total_power_w * 1000)) * 100 if total_power_w else 0
-            appliances.append({
-                "name": profile["name"],
-                "power_w": round(power, 1),
-                "share_percent": round(share, 1),
-                "category": profile["category"],
-            })
-        return sorted(appliances, key=lambda x: x["power_w"], reverse=True)
-
-    def aggregate_usage(self, live_power_kw: float) -> dict:
         settings = get_settings()
-        hour = datetime.now().hour
-        daily_base = 12 + (live_power_kw * 4)
-        weekly = daily_base * 6.8
-        monthly = daily_base * 28
-        rate = settings.electricity_rate_per_kwh
-        if 18 <= hour <= 22:
-            rate *= settings.peak_rate_multiplier
-        bill = monthly * rate
-        carbon = monthly * 0.82  # kg CO2 per kWh (India grid avg approx)
+        t = datetime.now(timezone.utc)
+        hour = t.hour
+
+        # Diurnal pattern: higher evening usage
+        base_load = 0.4 + 0.35 * math.sin((hour - 6) * math.pi / 12)
+        noise = random.uniform(-0.08, 0.08)
+        power_kw = max(0.15, base_load + noise + random.uniform(0, 0.5))
+
+        voltage = random.uniform(228, 242)
+        current = (power_kw * 1000) / (voltage * 0.92)
+        power_w = power_kw * 1000
+
+        # Increment cumulative usage slightly each tick
+        increment = power_kw * (settings.energy_sim_interval_seconds / 3600)
+        self._daily_kwh += increment
+        self._monthly_kwh += increment
+
+        appliances = self._estimate_appliances(power_kw)
+        estimated_bill = self._monthly_kwh * settings.tariff_per_kwh
+        carbon_kg = self._monthly_kwh * 0.82  # kg CO2 per kWh (India grid avg)
+
         return {
-            "daily_kwh": round(daily_base, 2),
-            "weekly_kwh": round(weekly, 2),
-            "monthly_kwh": round(monthly, 2),
-            "estimated_bill": round(bill, 2),
-            "carbon_kg": round(carbon, 2),
-            "peak_hour": "18:00 - 22:00",
-            "savings_potential": round(bill * 0.18, 2),
+            "timestamp": t.isoformat(),
+            "voltage": round(voltage, 1),
+            "current": round(current, 2),
+            "power_kw": round(power_kw, 3),
+            "power_w": round(power_w, 0),
+            "frequency": round(random.uniform(49.8, 50.2), 2),
+            "power_factor": round(random.uniform(0.88, 0.98), 2),
+            "daily_kwh": round(self._daily_kwh, 2),
+            "monthly_kwh": round(self._monthly_kwh, 2),
+            "estimated_bill": round(estimated_bill, 2),
+            "carbon_kg": round(carbon_kg, 2),
+            "appliances": appliances,
+            "user_id": self.user_id,
         }
 
+    def _estimate_appliances(self, total_kw: float) -> Dict[str, float]:
+        """NILM-style dummy disaggregation: allocate total power to appliances."""
+        active = []
+        for name, (lo, hi) in self.APPLIANCE_PROFILES.items():
+            if random.random() > 0.35:
+                share = random.uniform(lo, hi)
+                active.append((name, share))
 
-simulator = EnergySimulator()
+        if not active:
+            return {"standby": round(total_kw, 3)}
+
+        total_share = sum(s for _, s in active) or 1.0
+        scale = total_kw / total_share
+        return {name: round(share * scale, 3) for name, share in active}
+
+    def history(self, period: str = "daily") -> list:
+        """Generate chart history for daily / weekly / monthly views."""
+        settings = get_settings()
+        if period == "weekly":
+            labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+            base = [10, 12, 11, 13, 14, 16, 15]
+        elif period == "monthly":
+            labels = [f"W{i}" for i in range(1, 5)]
+            base = [68, 72, 75, 70]
+        else:
+            labels = [f"{h:02d}:00" for h in range(0, 24, 2)]
+            base = [
+                0.3, 0.25, 0.2, 0.2, 0.25, 0.4, 0.8, 1.2,
+                1.0, 0.9, 0.85, 1.1, 1.3, 1.2, 1.0, 0.95,
+                1.1, 1.5, 2.0, 2.2, 2.0, 1.6, 1.0, 0.5,
+            ]
+        return [
+            {
+                "label": lbl,
+                "kwh": round(kwh + random.uniform(-0.5, 0.5), 2),
+                "cost": round((kwh + random.uniform(-0.5, 0.5)) * settings.tariff_per_kwh, 2),
+            }
+            for lbl, kwh in zip(labels, base)
+        ]
+
+
+# Per-user simulator instances
+_simulators: Dict[str, EnergySimulator] = {}
+
+
+def get_simulator(user_id: str) -> EnergySimulator:
+    if user_id not in _simulators:
+        _simulators[user_id] = EnergySimulator(user_id)
+    return _simulators[user_id]
