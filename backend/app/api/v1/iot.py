@@ -45,6 +45,6 @@ async def ingest_reading(
 
 @router.post("/mqtt/placeholder")
 async def mqtt_placeholder():
-  return {
-      "message": "MQTT subscriber not started. Enable MQTT_ENABLED in .env for production.",
-  }
+    return {
+        "message": "MQTT subscriber not started. Enable MQTT_ENABLED in .env for production.",
+    }
